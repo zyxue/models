@@ -118,6 +118,7 @@ class BaseParser(argparse.ArgumentParser):
           metavar="<BS>"
       )
 
+    # TODO(taylorrobie@): depricate and only use DistributionStrategies
     if multi_gpu:
       self.add_argument(
           "--multi_gpu", action="store_true",
@@ -199,6 +200,41 @@ class PerformanceParser(argparse.ArgumentParser):
                "generally recommended to set --train_epochs=1 when using this"
                "flag.",
           metavar="<MTS>"
+      )
+
+
+class DistributionStrategiesParser(argparse.ArgumentParser):
+  """Parser to add flags need for distribution strategies.
+
+  Args:
+    add_help: Create the "--help" flag. False if class instance is a parent.
+    batch_size: Create a flag to specify the batch size. (Instead of the one
+      in BaseParser)
+  """
+
+  def __init__(self, add_help=False, batch_size=True):
+    super(DistributionStrategiesParser, self).__init__(add_help=add_help)
+
+    self.add_argument(
+        "--use_distribution_strategy", action="store_true",
+        help="If set, use the DistributionStrategies API."
+    )
+
+    self.add_argument(
+        "--gpus_for_distribution_strategy", type=int, default=2,
+        help="[default: %(default)s] How many GPUs to use with the "
+             "DistributionStrategies API.",
+        metavar="<GDS>"
+    )
+
+    if batch_size:
+      self.add_argument(
+          "--batch_size", "-bs", type=int, default=32,
+          help="[default: %(default)s] Batch size for training and evaluation. "
+               "If a multi-GPU distribution strategy is chosen then each GPU "
+               "will process batch_size points, effectively setting the overall "
+               "batch size to `batch_size * gpus_for_distribution_strategy`",
+          metavar="<BS>"
       )
 
 

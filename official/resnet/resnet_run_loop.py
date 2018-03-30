@@ -298,33 +298,43 @@ def resnet_model_fn(features, labels, mode, model_class,
       eval_metric_ops=metrics)
 
 
-def validate_batch_size_for_multi_gpu(batch_size):
+def assign_per_device_batch_size(flags):
   """For multi-gpu, batch-size must be a multiple of the number of GPUs.
 
-  Note that this should eventually be handled by replicate_model_fn
+  Note that this should eventually be handled by DistributionStrategies
   directly. Multi-GPU support is currently experimental, however,
   so doing the work here until that feature is in place.
 
   Args:
-    batch_size: the number of examples processed in each training batch.
+    flags: The parsed namespace for a run.
 
   Raises:
-    ValueError: if no GPUs are found, or selected batch_size is invalid.
+    ValueError: if selected batch_size or gpus_for_distribution_strategy is
+      invalid.
   """
-
   local_device_protos = device_lib.list_local_devices()
   num_gpus = sum([1 for d in local_device_protos if d.device_type == 'GPU'])
-  if not num_gpus:
-    raise ValueError('Multi-GPU mode was specified, but no GPUs '
-                     'were found. To use CPU, run without --multi_gpu.')
 
-  remainder = batch_size % num_gpus
-  if remainder:
-    err = ('When running with multiple GPUs, batch size '
-           'must be a multiple of the number of available GPUs. '
-           'Found {} GPUs with a batch size of {}; try --batch_size={} instead.'
-          ).format(num_gpus, batch_size, batch_size - remainder)
-    raise ValueError(err)
+  if (flags.use_distribution_strategy and
+      flags.gpus_for_distribution_strategy > 1):
+    if flags.gpus_for_distribution_strategy > num_gpus:
+      raise ValueError("{} GPUs specified, only {} detected.".format(
+          flags.gpus_for_distribution_strategy,
+          num_gpus
+      ))
+    remainder = flags.batch_size % flags.gpus_for_distribution_strategy
+    if remainder:
+      err = ('When running with multiple GPUs, batch size '
+             'must be a multiple of the number of available GPUs. '
+             'Found {} GPUs with a batch size of {}; try --batch_size={} instead.'
+             ).format(num_gpus, batch_size, batch_size - remainder)
+      raise ValueError(err)
+    vars(flags)["per_device_batch_size"] = \
+      int(flags.batch_size / flags.gpus_for_distribution_strategy)
+    vars(flags)["multi_gpu"] = True
+  else:
+    vars(flags)["per_device_batch_size"] = flags.batch_size
+    vars(flags)["multi_gpu"] = False
 
 
 def resnet_main(flags, model_function, input_function, shape=None):
@@ -345,15 +355,8 @@ def resnet_main(flags, model_function, input_function, shape=None):
   # Using the Winograd non-fused algorithms provides a small performance boost.
   os.environ['TF_ENABLE_WINOGRAD_NONFUSED'] = '1'
 
-  if flags.multi_gpu:
-    validate_batch_size_for_multi_gpu(flags.batch_size)
-
-    # There are two steps required if using multi-GPU: (1) wrap the model_fn,
-    # and (2) wrap the optimizer. The first happens here, and (2) happens
-    # in the model_fn itself when the optimizer is defined.
-    model_function = tf.contrib.estimator.replicate_model_fn(
-        model_function,
-        loss_reduction=tf.losses.Reduction.MEAN)
+  # TODO(taylorrobie@): remove when per_device is no longer needed.
+  assign_per_device_batch_size(flags)
 
   # Create session config based on values of inter_op_parallelism_threads and
   # intra_op_parallelism_threads. Note that we default to having
@@ -388,7 +391,6 @@ def resnet_main(flags, model_function, input_function, shape=None):
           'resnet_size': flags.resnet_size,
           'data_format': flags.data_format,
           'batch_size': flags.batch_size,
-          'multi_gpu': flags.multi_gpu,
           'version': flags.version,
       })
 
@@ -467,7 +469,7 @@ class ResnetArgParser(argparse.ArgumentParser):
 
   def __init__(self, resnet_size_choices=None):
     super(ResnetArgParser, self).__init__(parents=[
-        parsers.BaseParser(batch_size=False, multi_gpu=False),
+        parsers.BaseParser(multi_gpu=False),
         parsers.DistributionStrategiesParser(),
         parsers.PerformanceParser(),
         parsers.ImageModelParser(),

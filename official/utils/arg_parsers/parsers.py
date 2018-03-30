@@ -212,7 +212,7 @@ class DistributionStrategiesParser(argparse.ArgumentParser):
       in BaseParser)
   """
 
-  def __init__(self, add_help=False, batch_size=True):
+  def __init__(self, add_help=False):
     super(DistributionStrategiesParser, self).__init__(add_help=add_help)
 
     self.add_argument(
@@ -226,16 +226,6 @@ class DistributionStrategiesParser(argparse.ArgumentParser):
              "DistributionStrategies API.",
         metavar="<GDS>"
     )
-
-    if batch_size:
-      self.add_argument(
-          "--batch_size", "-bs", type=int, default=32,
-          help="[default: %(default)s] Batch size for training and evaluation. "
-               "If a multi-GPU distribution strategy is chosen then each GPU "
-               "will process batch_size points, effectively setting the overall "
-               "batch size to `batch_size * gpus_for_distribution_strategy`",
-          metavar="<BS>"
-      )
 
 
 class ImageModelParser(argparse.ArgumentParser):

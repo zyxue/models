@@ -106,12 +106,8 @@ def process_record_dataset(dataset, is_training, batch_size, shuffle_buffer,
   # Operations between the final prefetch and the get_next call to the iterator
   # will happen synchronously during run time. We prefetch here again to
   # background all of the above processing work and keep it out of the
-  # critical training path. In the future Estimator will likely scale prefetch
-  # for multi-GPU automatically.
-  if use_distribution_strategy:
-    dataset = dataset.prefetch(gpus_for_distribution_strategy)
-  else:
-    dataset = dataset.prefetch(1)
+  # critical training path.
+  dataset.prefetch(buffer_size=tf.contrib.data.AUTOTUNE)
 
   return dataset
 

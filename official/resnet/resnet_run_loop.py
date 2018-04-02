@@ -331,7 +331,7 @@ def compute_per_device_batch_size(batch_size, use_distribution_strategy,
              ).format(gpus_for_distribution_strategy, batch_size,
                       batch_size - remainder)
       raise ValueError(err)
-    return int(flags.batch_size / flags.gpus_for_distribution_strategy)
+    return int(batch_size / gpus_for_distribution_strategy)
   return batch_size
 
 

@@ -72,9 +72,17 @@ def process_record_dataset(dataset, is_training, batch_size, shuffle_buffer,
   Returns:
     Dataset of (image, label) pairs ready for iteration.
   """
+
+  # TODO(taylorrobie@) remove when DistributionStrategies uses global batch size
+  per_device_batch_size = compute_per_device_batch_size(
+      batch_size=batch_size,
+      use_distribution_strategy=use_distribution_strategy,
+      gpus_for_distribution_strategy=gpus_for_distribution_strategy
+  )
+
   # We prefetch a batch at a time, This can help smooth out the time taken to
   # load input files as we go through shuffling and processing.
-  dataset = dataset.prefetch(buffer_size=batch_size)
+  dataset = dataset.prefetch(buffer_size=per_device_batch_size)
   if is_training:
     # Shuffle the records. Note that we shuffle before repeating to ensure
     # that the shuffling respects epoch boundaries.
@@ -94,13 +102,14 @@ def process_record_dataset(dataset, is_training, batch_size, shuffle_buffer,
   # in the future, but for now, we just drop the leftovers here.
   if use_distribution_strategy:
     total_examples = num_epochs * examples_per_epoch
-    dataset = dataset.take(batch_size * (total_examples // batch_size))
+    dataset = dataset.take(
+        per_device_batch_size * (total_examples // per_device_batch_size))
 
   # Parse the raw records into images and labels
   dataset = dataset.apply(
       tf.contrib.data.map_and_batch(
           lambda value: parse_record_fn(value, is_training),
-          batch_size=batch_size,
+          batch_size=per_device_batch_size,
           num_parallel_batches=1))
 
   # Operations between the final prefetch and the get_next call to the iterator
@@ -129,9 +138,18 @@ def get_synth_input_fn(height, width, num_channels, num_classes):
     An input_fn that can be used in place of a real one to return a dataset
     that can be used for iteration.
   """
-  def input_fn(is_training, data_dir, batch_size, *args, **kwargs):  # pylint: disable=unused-argument
-    images = tf.zeros((batch_size, height, width, num_channels), tf.float32)
-    labels = tf.zeros((batch_size, num_classes), tf.int32)
+  def input_fn(is_training, data_dir, batch_size,
+      use_distribution_strategy=False, gpus_for_distribution_strategy=1,
+      *args, **kwargs):  # pylint: disable=unused-argument
+    # TODO(taylorrobie@) remove when DistributionStrategies uses global batch size
+    per_device_batch_size = compute_per_device_batch_size(
+        batch_size=batch_size,
+        use_distribution_strategy=use_distribution_strategy,
+        gpus_for_distribution_strategy=gpus_for_distribution_strategy
+    )
+    images = tf.zeros(
+        (per_device_batch_size, height, width, num_channels), tf.float32)
+    labels = tf.zeros((per_device_batch_size, num_classes), tf.int32)
     return tf.data.Dataset.from_tensors((images, labels)).repeat()
 
   return input_fn
@@ -294,19 +312,37 @@ def resnet_model_fn(features, labels, mode, model_class,
       eval_metric_ops=metrics)
 
 
-def assign_per_device_batch_size(flags):
+def compute_per_device_batch_size(batch_size, use_distribution_strategy,
+                                  gpus_for_distribution_strategy):
   """For multi-gpu, batch-size must be a multiple of the number of GPUs.
 
   Note that this should eventually be handled by DistributionStrategies
   directly. Multi-GPU support is currently experimental, however,
   so doing the work here until that feature is in place.
 
+
+  """
+  if use_distribution_strategy and gpus_for_distribution_strategy > 1:
+    remainder = batch_size % gpus_for_distribution_strategy
+    if remainder:
+      err = ('When running with multiple GPUs, batch size '
+             'must be a multiple of the number of available GPUs. Found {} '
+             'GPUs with a batch size of {}; try --batch_size={} instead.'
+             ).format(gpus_for_distribution_strategy, batch_size,
+                      batch_size - remainder)
+      raise ValueError(err)
+    return int(flags.batch_size / flags.gpus_for_distribution_strategy)
+  return batch_size
+
+
+def assign_multi_gpu(flags):
+  """Set flag if multi-GPU training is called for.
+
   Args:
     flags: The parsed namespace for a run.
 
   Raises:
-    ValueError: if selected batch_size or gpus_for_distribution_strategy is
-      invalid.
+    ValueError: if gpus_for_distribution_strategy is invalid.
   """
   local_device_protos = device_lib.list_local_devices()
   num_gpus = sum([1 for d in local_device_protos if d.device_type == 'GPU'])
@@ -318,18 +354,8 @@ def assign_per_device_batch_size(flags):
           flags.gpus_for_distribution_strategy,
           num_gpus
       ))
-    remainder = flags.batch_size % flags.gpus_for_distribution_strategy
-    if remainder:
-      err = ('When running with multiple GPUs, batch size '
-             'must be a multiple of the number of available GPUs. '
-             'Found {} GPUs with a batch size of {}; try --batch_size={} instead.'
-             ).format(num_gpus, batch_size, batch_size - remainder)
-      raise ValueError(err)
-    vars(flags)["per_device_batch_size"] = \
-      int(flags.batch_size / flags.gpus_for_distribution_strategy)
     vars(flags)["multi_gpu"] = True
   else:
-    vars(flags)["per_device_batch_size"] = flags.batch_size
     vars(flags)["multi_gpu"] = False
 
 
@@ -352,7 +378,7 @@ def resnet_main(flags, model_function, input_function, shape=None):
   os.environ['TF_ENABLE_WINOGRAD_NONFUSED'] = '1'
 
   # TODO(taylorrobie@): remove when per_device is no longer needed.
-  assign_per_device_batch_size(flags)
+  assign_multi_gpu(flags)
 
   # Create session config based on values of inter_op_parallelism_threads and
   # intra_op_parallelism_threads. Note that we default to having

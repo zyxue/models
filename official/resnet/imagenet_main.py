@@ -155,7 +155,8 @@ def parse_record(raw_record, is_training):
 
 
 def input_fn(is_training, data_dir, batch_size, num_epochs=1,
-             num_parallel_calls=1, multi_gpu=False):
+             num_parallel_calls=1, use_distribution_strategy=False,
+             gpus_for_distribution_strategy=1):
   """Input function which provides batches for train or eval.
 
   Args:
@@ -188,7 +189,9 @@ def input_fn(is_training, data_dir, batch_size, num_epochs=1,
   return resnet_run_loop.process_record_dataset(
       dataset, is_training, batch_size, _SHUFFLE_BUFFER, parse_record,
       num_epochs, num_parallel_calls, examples_per_epoch=num_images,
-      multi_gpu=multi_gpu)
+      use_distribution_strategy=use_distribution_strategy,
+      gpus_for_distribution_strategy=gpus_for_distribution_strategy
+  )
 
 
 def get_synth_input_fn():
@@ -290,8 +293,7 @@ def imagenet_model_fn(features, labels, mode, params):
                                          momentum=0.9,
                                          data_format=params['data_format'],
                                          version=params['version'],
-                                         loss_filter_fn=None,
-                                         multi_gpu=params['multi_gpu'])
+                                         loss_filter_fn=None)
 
 
 def main(argv):

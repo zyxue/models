@@ -104,7 +104,8 @@ def preprocess_image(image, is_training):
 
 
 def input_fn(is_training, data_dir, batch_size, num_epochs=1,
-             num_parallel_calls=1, multi_gpu=False):
+             num_parallel_calls=1, use_distribution_strategy=False,
+             gpus_for_distribution_strategy=1):
   """Input_fn using the tf.data input pipeline for CIFAR-10 dataset.
 
   Args:
@@ -130,7 +131,10 @@ def input_fn(is_training, data_dir, batch_size, num_epochs=1,
   return resnet_run_loop.process_record_dataset(
       dataset, is_training, batch_size, _NUM_IMAGES['train'],
       parse_record, num_epochs, num_parallel_calls,
-      examples_per_epoch=num_images, multi_gpu=multi_gpu)
+      examples_per_epoch=num_images,
+      use_distribution_strategy=use_distribution_strategy,
+      gpus_for_distribution_strategy=gpus_for_distribution_strategy
+  )
 
 
 def get_synth_input_fn():
@@ -211,8 +215,7 @@ def cifar10_model_fn(features, labels, mode, params):
                                          momentum=0.9,
                                          data_format=params['data_format'],
                                          version=params['version'],
-                                         loss_filter_fn=loss_filter_fn,
-                                         multi_gpu=params['multi_gpu'])
+                                         loss_filter_fn=loss_filter_fn)
 
 
 def main(argv):

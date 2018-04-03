@@ -23,6 +23,19 @@ You will need to compile the ops as follows (See
 [Adding a New Op to TensorFlow](https://www.tensorflow.org/how_tos/adding_an_op/#building_the_op_library)
 for more details).:
 
+*NOTE by zyxue: This only works on later versions of tensorflow. I used
+tf-1.4.1, and `get_compile_flags` doesn't exist, so to compile, I followed
+instructions on an earlier version of the `README.md`
+([8e4a1e](https://github.com/tensorflow/models/blob/8e4a1e2e0a7450f0457b820a589960e03c20060d/tutorials/embedding/README.md)),
+and help from this
+[discussion](https://github.com/sadeepj/crfasrnn_keras/issues/19). The command I used instead is*
+
+```
+TF_INC=$(python -c 'import tensorflow as tf; print(tf.sysconfig.get_include())')
+g++ -std=c++11 -shared word2vec_ops.cc word2vec_kernels.cc -o word2vec_ops.so -fPIC -I $TF_INC -I$TF_INC/external/nsync/public -O2 -D_GLIBCXX_USE_CXX11_ABI=0
+```
+
+NOT used
 ```shell
 TF_CFLAGS=( $(python -c 'import tensorflow as tf; print(" ".join(tf.sysconfig.get_compile_flags()))') )
 TF_LFLAGS=( $(python -c 'import tensorflow as tf; print(" ".join(tf.sysconfig.get_link_flags()))') )
